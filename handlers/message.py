@@ -1,52 +1,97 @@
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardRemove
-from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackQueryHandler, CallbackContext
-import os
+from telegram import (
+    Update, InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardRemove
+)
+from telegram.ext import CallbackContext
 import json
 from datetime import datetime
+import os
 
-from handlers.admin import (
-    add_admin,
-    remove_admin,
-    forall,
-    handle_broadcast_message,
-    stats,
-    help_command
-)
-from handlers.message import user_message, start_command, button_callback
-
-TOKEN = os.getenv("BOT_TOKEN")
-ADMIN_IDS = list(map(int, os.getenv("ADMIN_IDS", "").split(',')))
 USERS_FILE = 'data/users.json'
 BLOCK_FILE = 'data/blocked.json'
+REPLY_STATE = {}
 
-os.makedirs('data', exist_ok=True)
-if not os.path.exists(USERS_FILE):
-    with open(USERS_FILE, 'w') as f:
-        json.dump({}, f)
+def start_command(update: Update, context: CallbackContext):
+    user = update.effective_user
+    user_id = str(user.id)
 
-if not os.path.exists(BLOCK_FILE):
-    with open(BLOCK_FILE, 'w') as f:
-        json.dump([], f)
+    with open(USERS_FILE, 'r+') as f:
+        users = json.load(f)
+        if user_id not in users:
+            users[user_id] = {
+                'name': user.full_name,
+                'username': user.username,
+                'start_time': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            }
+            f.seek(0)
+            json.dump(users, f, indent=4)
+            f.truncate()
 
-def main():
-    updater = Updater(TOKEN, use_context=True)
-    dp = updater.dispatcher
+    with open(BLOCK_FILE, 'r') as f:
+        blocked = json.load(f)
+        if int(user_id) in blocked:
+            update.message.reply_text("شما توسط ادمین مسدود شده‌اید.")
+            return
 
-    # Command handlers
-    dp.add_handler(CommandHandler("start", start_command))
-    dp.add_handler(CommandHandler("admin", add_admin))
-    dp.add_handler(CommandHandler("removeadmin", remove_admin))
-    dp.add_handler(CommandHandler("forall", forall))
-    dp.add_handler(CommandHandler("stats", stats))
-    dp.add_handler(CommandHandler("help", help_command))
+    keyboard = [[InlineKeyboardButton("✉️ ارسال پیام", callback_data='send_message')]]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    update.message.reply_text("به ربات خوش آمدید!\nبرای ارسال پیام به ادمین، دکمه زیر را بزنید 👇", reply_markup=reply_markup)
 
-    # Message handlers
-    dp.add_handler(MessageHandler(Filters.text & Filters.user(user_id=ADMIN_IDS), handle_broadcast_message))
-    dp.add_handler(MessageHandler(Filters.private & ~Filters.command, user_message))
-    dp.add_handler(CallbackQueryHandler(button_callback))
+def button_callback(update: Update, context: CallbackContext):
+    query = update.callback_query
+    user_id = query.from_user.id
 
-    updater.start_polling()
-    updater.idle()
+    with open(BLOCK_FILE, 'r') as f:
+        blocked = json.load(f)
+        if user_id in blocked:
+            query.answer("شما مسدود شده‌اید.")
+            return
 
-if __name__ == '__main__':
-    main()
+    if query.data == 'send_message':
+        REPLY_STATE[user_id] = True
+        context.bot.send_message(
+            chat_id=user_id,
+            text="پیام خود را ارسال کنید...",
+            reply_markup=ReplyKeyboardRemove()
+        )
+        context.bot.delete_message(chat_id=user_id, message_id=query.message.message_id)
+
+def user_message(update: Update, context: CallbackContext):
+    user = update.effective_user
+    user_id = user.id
+    message = update.message
+
+    with open(BLOCK_FILE, 'r') as f:
+        blocked = json.load(f)
+        if user_id in blocked:
+            return
+
+    if REPLY_STATE.get(user_id):
+        del REPLY_STATE[user_id]
+
+        with open(USERS_FILE, 'r') as f:
+            users = json.load(f)
+
+        user_info = users.get(str(user_id), {})
+        name = user_info.get('name', user.full_name)
+        username = user_info.get('username', user.username)
+        time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+
+        # ساخت دکمه پاسخ و بلاک
+        buttons = [
+            [
+                InlineKeyboardButton("✉️ پاسخ", callback_data=f"reply_{user_id}"),
+                InlineKeyboardButton("⛔ بلاک", callback_data=f"block_{user_id}")
+            ]
+        ]
+        reply_markup = InlineKeyboardMarkup(buttons)
+
+        text = f"📥 پیام جدید:\n\n👤 {name} | @{username or 'ندارد'}\n🆔 {user_id}\n🕒 {time}"
+        context.bot.send_message(chat_id=int(os.getenv("ADMIN_IDS").split(",")[0]), text=text, reply_markup=reply_markup)
+        if message.text:
+            context.bot.send_message(chat_id=int(os.getenv("ADMIN_IDS").split(",")[0]), text=message.text)
+
+        context.bot.send_message(chat_id=user_id, text="✅ پیام شما ارسال شد. دکتر گشاد دریافت کرد!")
+
+        # دکمه ارسال مجدد
+        keyboard = [[InlineKeyboardButton("✉️ ارسال مجدد", callback_data='send_message')]]
+        context.bot.send_message(chat_id=user_id, text="اگر می‌خواهید پیام جدیدی ارسال کنید:", reply_markup=InlineKeyboardMarkup(keyboard))
