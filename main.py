@@ -1,52 +1,118 @@
-from telegram.ext import (
-    Updater,
-    CommandHandler,
-    MessageHandler,
-    CallbackQueryHandler,
-    Filters,
-)
-from config import BOT_TOKEN
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackContext, CallbackQueryHandler
+import os
+import json
+from datetime import datetime
 
-# هندلرهای شروع و دکمه ارسال پیام
-from handlers.start import start_handler, send_button_callback
+# 🔒 متغیرهای محیطی
+TOKEN = os.getenv("BOT_TOKEN")
+ADMIN_IDS = [int(x) for x in os.getenv("ADMIN_IDS", "").split(",") if x.strip().isdigit()]
 
-# هندلرهای پیام، پاسخ، بلاک
-from handlers.message import (
-    user_message_handler,
-    reply_message_handler,
-    button_callback_handler,
-)
+# 🗂 مسیر فایل آمار
+USER_DATA_FILE = "users.json"
 
-# هندلرهای ادمین (help, stats, addadmin, deladmin)
-from handlers.admin import handlers as admin_handlers
+# 📥 هندلر شروع
+def start(update: Update, context: CallbackContext):
+    user_id = update.message.from_user.id
+    username = update.message.from_user.username or "-"
+    full_name = update.message.from_user.full_name
 
-# هندلرهای پیام همگانی
-from handlers.broadcast import forall_init_handler, handle_broadcast_message
+    # ذخیره کاربر
+    save_user(user_id, username, full_name)
 
+    keyboard = [[InlineKeyboardButton("✉️ ارسال پیام به دکتر گشاد", callback_data="send_message")]]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
+    update.message.reply_text(
+        "سلام 👋\n"
+        "به ربات رسمی دکتر گشاد خوش اومدی.\n"
+        "پیامتو ارسال کن، به گشادیم برسون، زودی جوابتو میدیم!",
+        reply_markup=reply_markup
+    )
+
+# 💾 ذخیره اطلاعات کاربر در فایل
+def save_user(user_id, username, full_name):
+    if not os.path.exists(USER_DATA_FILE):
+        with open(USER_DATA_FILE, 'w') as f:
+            json.dump({}, f)
+
+    with open(USER_DATA_FILE, 'r') as f:
+        data = json.load(f)
+
+    if str(user_id) not in data:
+        data[str(user_id)] = {
+            "username": username,
+            "name": full_name,
+            "start_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        }
+        with open(USER_DATA_FILE, 'w') as f:
+            json.dump(data, f, indent=2)
+
+# 🎯 هندلر کلیک روی دکمه "ارسال پیام"
+def button(update: Update, context: CallbackContext):
+    query = update.callback_query
+    query.answer()
+
+    if query.data == "send_message":
+        context.user_data["awaiting_message"] = True
+        query.edit_message_text("✍ حالا پیامتو تایپ کن و بفرست تا دکتر گشاد ببینه...")
+
+# 📨 وقتی کاربر پیام می‌فرسته
+def user_message(update: Update, context: CallbackContext):
+    if context.user_data.get("awaiting_message"):
+        message = update.message.text
+
+        # ارسال به همه ادمین‌ها
+        keyboard = [
+            [
+                InlineKeyboardButton("✉️ پاسخ", callback_data=f"reply_{update.message.chat.id}"),
+                InlineKeyboardButton("بلاک 🔒", callback_data=f"block_{update.message.chat.id}")
+            ]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+
+        for admin_id in ADMIN_IDS:
+            context.bot.send_message(
+                chat_id=admin_id,
+                text=(
+                    f"📨 پیام از: {update.message.from_user.full_name} "
+                    f"(@{update.message.from_user.username or 'نداره'})\n"
+                    f"ID: {update.message.from_user.id}\n\n"
+                    f"{message}"
+                ),
+                reply_markup=reply_markup
+            )
+
+        # تایید برای کاربر
+        update.message.reply_text("✅ پیامت ارسال شد! دکتر گشاد به‌زودی جوابتو میده.")
+        context.user_data["awaiting_message"] = False
+    else:
+        update.message.reply_text("اول باید روی دکمه ✉️ ارسال پیام کلیک کنی.")
+
+# 🆘 راهنما
+def help_command(update: Update, context: CallbackContext):
+    update.message.reply_text("📌 راهنما:\n/start - شروع ربات\n/help - همین پیام")
+
+# 🔁 دریافت کلیک پاسخ ادمین (در نسخه پیشرفته فعال میشه)
+def admin_buttons(update: Update, context: CallbackContext):
+    query = update.callback_query
+    query.answer()
+    query.edit_message_reply_markup(reply_markup=None)
+    query.message.reply_text("🚧 قابلیت پاسخ و بلاک در حال توسعه است.")
+
+# 🚀 اجرای ربات
 def main():
-    updater = Updater(BOT_TOKEN, use_context=True)
+    updater = Updater(TOKEN, use_context=True)
     dp = updater.dispatcher
 
-    # 🟢 شروع و ارسال پیام
-    dp.add_handler(start_handler)
-    dp.add_handler(send_button_callback)
+    dp.add_handler(CommandHandler("start", start))
+    dp.add_handler(CommandHandler("help", help_command))
+    dp.add_handler(CallbackQueryHandler(button, pattern="^send_message$"))
+    dp.add_handler(CallbackQueryHandler(admin_buttons, pattern="^(reply_|block_)"))
+    dp.add_handler(MessageHandler(Filters.text & Filters.private, user_message))
 
-    # 🟢 پیام‌های کاربران و پاسخ ادمین
-    dp.add_handler(user_message_handler)
-    dp.add_handler(reply_message_handler)
-    dp.add_handler(button_callback_handler)
-
-    # 🟢 پیام همگانی
-    dp.add_handler(forall_init_handler)
-    dp.add_handler(MessageHandler(Filters.private & ~Filters.command, handle_broadcast_message))
-
-    # 🟢 دستورات مدیریتی
-    for handler in admin_handlers:
-        dp.add_handler(handler)
-
-    # 🚀 اجرای ربات
     updater.start_polling()
     updater.idle()
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()
