@@ -1,52 +1,50 @@
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardRemove
+from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackQueryHandler, CallbackContext
 import os
-import logging
-from telegram.ext import Updater, CommandHandler, CallbackQueryHandler, MessageHandler, Filters
-from telegram import BotCommand
+import json
+from datetime import datetime
+
 from handlers.admin import (
-    add_admin, remove_admin, broadcast_entry, broadcast_message,
-    show_stats, show_help, handle_admin_response, handle_block_unblock
+    add_admin,
+    remove_admin,
+    forall,
+    handle_broadcast_message,
+    stats,
+    help_command
 )
-from handlers.message import (
-    start_command, user_message_handler, show_main_menu,
-    prompt_for_message, cancel_message_input
-)
-from dotenv import load_dotenv
+from handlers.message import user_message, start_command, button_callback
 
-load_dotenv()
-
-# تنظیم لاگر
-logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.INFO
-)
-
-# گرفتن توکن و ادمین‌ها از محیط
 TOKEN = os.getenv("BOT_TOKEN")
-ADMIN_IDS = list(map(int, os.getenv("ADMIN_IDS", "").split(",")))
+ADMIN_IDS = list(map(int, os.getenv("ADMIN_IDS", "").split(',')))
+USERS_FILE = 'data/users.json'
+BLOCK_FILE = 'data/blocked.json'
+
+os.makedirs('data', exist_ok=True)
+if not os.path.exists(USERS_FILE):
+    with open(USERS_FILE, 'w') as f:
+        json.dump({}, f)
+
+if not os.path.exists(BLOCK_FILE):
+    with open(BLOCK_FILE, 'w') as f:
+        json.dump([], f)
 
 def main():
-    updater = Updater(TOKEN)
+    updater = Updater(TOKEN, use_context=True)
     dp = updater.dispatcher
 
-    # دستورات ادمینی
+    # Command handlers
+    dp.add_handler(CommandHandler("start", start_command))
     dp.add_handler(CommandHandler("admin", add_admin))
     dp.add_handler(CommandHandler("removeadmin", remove_admin))
-    dp.add_handler(CommandHandler("forall", broadcast_entry))
-    dp.add_handler(MessageHandler(Filters.text & Filters.chat(ADMIN_IDS), broadcast_message))
-    dp.add_handler(CommandHandler("stats", show_stats))
-    dp.add_handler(CommandHandler("help", show_help))
+    dp.add_handler(CommandHandler("forall", forall))
+    dp.add_handler(CommandHandler("stats", stats))
+    dp.add_handler(CommandHandler("help", help_command))
 
-    # پیام‌های ورودی کاربر
-    dp.add_handler(CommandHandler("start", start_command))
-    dp.add_handler(CallbackQueryHandler(prompt_for_message, pattern="^send_message$"))
-    dp.add_handler(CallbackQueryHandler(cancel_message_input, pattern="^cancel_send$"))
-    dp.add_handler(CallbackQueryHandler(handle_admin_response, pattern="^reply:"))
-    dp.add_handler(CallbackQueryHandler(handle_block_unblock, pattern="^(block|unblock):"))
+    # Message handlers
+    dp.add_handler(MessageHandler(Filters.text & Filters.user(user_id=ADMIN_IDS), handle_broadcast_message))
+    dp.add_handler(MessageHandler(Filters.private & ~Filters.command, user_message))
+    dp.add_handler(CallbackQueryHandler(button_callback))
 
-    # هندل پیام‌های خصوصی کاربران (غیردستور)
-    dp.add_handler(MessageHandler(Filters.private & ~Filters.command, user_message_handler))
-
-    # اجرای ربات
     updater.start_polling()
     updater.idle()
 
