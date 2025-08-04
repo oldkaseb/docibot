@@ -1,6 +1,7 @@
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Updater, CommandHandler, MessageHandler, CallbackQueryHandler, Filters, CallbackContext
 from config import BOT_TOKEN, ADMIN_IDS
+from handlers.forall import forall_command
 from handlers.message import (
     start_command,
     button_callback,
