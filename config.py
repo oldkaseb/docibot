@@ -1,17 +1,15 @@
 import os
 from dotenv import load_dotenv
 
-# فقط برای اجرای محلی، در Railway نیاز نیست
+# فقط برای اجرای محلی
 load_dotenv()
 
+# توکن ربات
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 
-# لیست آیدی‌های ادمین به‌صورت عددی
+# لیست آیدی‌های عددی ادمین
 ADMIN_IDS = [int(id) for id in os.getenv("ADMIN_IDS", "").split(",") if id]
 
-# در صورت نیاز: آیدی کانال برای توسعه آینده
-CHANNEL_ID = os.getenv("CHANNEL_ID")
-
-# مسیر فایل‌های دیتا
+# مسیر فایل‌های داده
 USERS_FILE = "data/users.json"
 BLOCKED_FILE = "data/blocked.json"
