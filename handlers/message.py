@@ -1,124 +1,96 @@
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardRemove
 from telegram.ext import CallbackContext
 import json
+from datetime import datetime
 import os
 
+USERS_FILE = 'data/users.json'
 BLOCK_FILE = 'data/blocked.json'
 
-# دکمه شروع و ارسال پیام
+# دستور /start
 def start_command(update: Update, context: CallbackContext):
     user = update.effective_user
-    save_user(user)
-    keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton("ارسال پیام به دکتر گشاد", callback_data="send_message")]
-    ])
-    update.message.reply_text("👋 خوش اومدی! اگه میخوای پیامی به تیم پشتیبانی بدی، رو دکمه زیر بزن.", reply_markup=keyboard)
 
-# هندلر کلیک روی دکمه‌ها
+    # ذخیره اطلاعات در فایل users.json
+    os.makedirs('data', exist_ok=True)
+    if not os.path.exists(USERS_FILE):
+        with open(USERS_FILE, 'w') as f:
+            json.dump({}, f)
+
+    with open(USERS_FILE, 'r') as f:
+        users = json.load(f)
+
+    if str(user.id) not in users:
+        users[str(user.id)] = {
+            "name": user.full_name,
+            "username": user.username,
+            "start_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        }
+        with open(USERS_FILE, 'w') as f:
+            json.dump(users, f, indent=2)
+
+    # دکمه ارسال پیام
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton("📨 فرستادن پیام به دکتر گشاد", callback_data="start_message")]
+    ])
+
+    context.bot.send_message(
+        chat_id=update.effective_chat.id,
+        text="سلام! 👋\nمی‌تونی یه پیام واسه دکتر گشاد بفرستی. روی دکمه زیر بزن و تایپ کن 😎👇",
+        reply_markup=keyboard
+    )
+
+
+# واکنش به دکمه ارسال پیام
 def button_callback(update: Update, context: CallbackContext):
     query = update.callback_query
-    user_id = query.from_user.id
+    query.answer()
 
-    if query.data == "send_message":
-        context.user_data["awaiting_message"] = True
-        query.edit_message_text("📝 خیلی خب! منتظرم پیام‌تو بنویسی و بفرستی.")
+    if query.data == "start_message":
+        context.bot.send_message(
+            chat_id=query.message.chat_id,
+            text="✍️ حالا پیامتو بنویس و بفرست. هر وقت خواستی می‌تونی دوباره پیام بدی 😄",
+            reply_markup=ReplyKeyboardRemove()
+        )
+        context.user_data["waiting_for_message"] = True
 
-    elif query.data.startswith("reply_"):
-        target_id = int(query.data.split("_")[1])
-        context.user_data['reply_to'] = target_id
-        query.answer()
-        query.message.reply_text("✏️ حالا متنتو بنویس تا براش بفرستم")
 
-    elif query.data.startswith("block_"):
-        target_id = int(query.data.split("_")[1])
-        block_user(target_id)
-        query.answer("کاربر بلاک شد ❌")
-        query.edit_message_reply_markup(reply_markup=None)
-
-    elif query.data.startswith("unblock_"):
-        target_id = int(query.data.split("_")[1])
-        unblock_user(target_id)
-        query.answer("کاربر آنبلاک شد ✅")
-        query.edit_message_reply_markup(reply_markup=None)
-
-# دریافت پیام‌های کاربران و ارسال به ادمین
+# دریافت پیام کاربر
 def user_message(update: Update, context: CallbackContext):
     user = update.effective_user
-    user_id = user.id
+    text = update.message.text
 
-    if is_blocked(user_id):
+    # اگر کاربر در حالت پیام‌دهی نیست، کاری نکن
+    if not context.user_data.get("waiting_for_message"):
         return
 
-    if context.user_data.get("awaiting_message"):
-        text = update.message.text
-        from handlers.config import ADMIN_IDS
+    # بررسی بلاک
+    if os.path.exists(BLOCK_FILE):
+        with open(BLOCK_FILE, 'r') as f:
+            blocked_ids = json.load(f)
+        if user.id in blocked_ids:
+            return
 
-        for admin_id in ADMIN_IDS:
+    # ارسال پیام به همه ادمین‌ها
+    admin_ids = list(map(int, os.getenv("ADMIN_IDS", "").split(',')))
+    for admin_id in admin_ids:
+        try:
             context.bot.send_message(
                 chat_id=admin_id,
-                text=f"📩 پیام جدید از {user.full_name} (@{user.username or 'نداره'}):\n\n{text}",
+                text=f"📩 پیام جدید از {user.full_name} (@{user.username}):\n\n{text}",
                 reply_markup=InlineKeyboardMarkup([
                     [
-                        InlineKeyboardButton("✉️ پاسخ", callback_data=f"reply_{user_id}"),
-                        InlineKeyboardButton("❌ بلاک", callback_data=f"block_{user_id}")
+                        InlineKeyboardButton("✉️ پاسخ", callback_data=f"reply:{user.id}"),
+                        InlineKeyboardButton("🚫 بلاک", callback_data=f"block:{user.id}")
                     ]
                 ])
             )
-        context.user_data["awaiting_message"] = False
-        update.message.reply_text("✅ پیامت رسید، دکتر گشاد دیدش 😄")
-        return
-
-    if context.user_data.get('reply_to'):
-        target_id = context.user_data['reply_to']
-        try:
-            context.bot.send_message(chat_id=target_id, text=update.message.text)
-            update.message.reply_text("✉️ پیام ارسال شد")
         except:
-            update.message.reply_text("❌ ارسال نشد! شاید بلاکمون کرده 😕")
-        context.user_data['reply_to'] = None
+            continue
 
-# ذخیره کاربر
-def save_user(user):
-    os.makedirs("data", exist_ok=True)
-    with open("data/users.json", "r+") as f:
-        data = json.load(f)
-        if str(user.id) not in data:
-            data[str(user.id)] = {
-                "name": user.full_name,
-                "username": user.username,
-                "start_time": str(update_time_now())
-            }
-            f.seek(0)
-            json.dump(data, f, indent=2)
-            f.truncate()
+    context.bot.send_message(
+        chat_id=update.effective_chat.id,
+        text="✅ پیامت با موفقیت فرستاده شد! دکتر گشاد حتماً می‌خونه 😄"
+    )
 
-# بلاک و آنبلاک
-
-def is_blocked(user_id):
-    if not os.path.exists(BLOCK_FILE):
-        return False
-    with open(BLOCK_FILE, 'r') as f:
-        return user_id in json.load(f)
-
-def block_user(user_id):
-    with open(BLOCK_FILE, 'r+') as f:
-        data = json.load(f)
-        if user_id not in data:
-            data.append(user_id)
-            f.seek(0)
-            json.dump(data, f)
-            f.truncate()
-
-def unblock_user(user_id):
-    with open(BLOCK_FILE, 'r+') as f:
-        data = json.load(f)
-        if user_id in data:
-            data.remove(user_id)
-            f.seek(0)
-            json.dump(data, f)
-            f.truncate()
-
-# زمان شروع کاربر
-
-def update_time_now():
-    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    context.user_data["waiting_for_message"] = False
