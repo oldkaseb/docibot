@@ -2,69 +2,65 @@ import json
 import os
 
 USERS_FILE = "data/users.json"
-BLOCKED_FILE = "data/blocked.json"
 ADMINS_FILE = "data/admins.json"
+BLOCKED_FILE = "data/blocked.json"
 
-# ذخیره‌سازی دیتا در فایل
-def save_json(filepath, data):
-    with open(filepath, 'w') as f:
-        json.dump(data, f)
-
-# بارگذاری دیتا از فایل
-def load_json(filepath):
-    if not os.path.exists(filepath):
+def load_json(path):
+    if not os.path.exists(path):
         return {}
-    with open(filepath, 'r') as f:
+    with open(path, "r") as f:
         return json.load(f)
 
-# --- مدیریت کاربران ---
-def save_user(user_id, name, username):
-    users = load_json(USERS_FILE)
-    if str(user_id) not in users:
-        users[str(user_id)] = {
-            "name": name,
-            "username": username
-        }
-        save_json(USERS_FILE, users)
+def save_json(path, data):
+    with open(path, "w") as f:
+        json.dump(data, f, indent=2)
 
 def get_all_users():
     return load_json(USERS_FILE)
 
-# --- مدیریت بلاک ---
-def add_blocked_user(user_id):
-    blocked = load_json(BLOCKED_FILE)
-    blocked[str(user_id)] = True
-    save_json(BLOCKED_FILE, blocked)
+def add_user(user_id, user_data):
+    users = load_json(USERS_FILE)
+    users[str(user_id)] = user_data
+    save_json(USERS_FILE, users)
 
-def remove_blocked_user(user_id):
-    blocked = load_json(BLOCKED_FILE)
-    if str(user_id) in blocked:
-        del blocked[str(user_id)]
-        save_json(BLOCKED_FILE, blocked)
-
-def is_user_blocked(user_id):
-    blocked = load_json(BLOCKED_FILE)
-    return str(user_id) in blocked
-
-def get_blocked_users():
-    return list(load_json(BLOCKED_FILE).keys())
-
-# --- مدیریت ادمین‌ها ---
 def get_admin_ids():
     data = load_json(ADMINS_FILE)
-    return list(map(int, data.keys()))
+    return data.get("admins", [])
 
 def add_admin_id(user_id):
     data = load_json(ADMINS_FILE)
-    data[str(user_id)] = True
+    if "admins" not in data:
+        data["admins"] = []
+    if user_id not in data["admins"]:
+        data["admins"].append(user_id)
     save_json(ADMINS_FILE, data)
 
 def remove_admin_id(user_id):
     data = load_json(ADMINS_FILE)
-    if str(user_id) in data:
-        del data[str(user_id)]
+    if "admins" in data and user_id in data["admins"]:
+        data["admins"].remove(user_id)
         save_json(ADMINS_FILE, data)
 
-def is_admin(user_id):
-    data = load_json(ADMINS_FILE)
-    return str(user_id) in data
+def get_blocked_users():
+    return load_json(BLOCKED_FILE).get("blocked", [])
+
+def add_blocked_user(user_id):
+    data = load_json(BLOCKED_FILE)
+    if "blocked" not in data:
+        data["blocked"] = []
+    if user_id not in data["blocked"]:
+        data["blocked"].append(user_id)
+    save_json(BLOCKED_FILE, data)
+
+def remove_blocked_user(user_id):
+    data = load_json(BLOCKED_FILE)
+    if "blocked" in data and user_id in data["blocked"]:
+        data["blocked"].remove(user_id)
+        save_json(BLOCKED_FILE, data)
+
+def is_user_blocked(user_id):
+    return user_id in get_blocked_users()
+
+# Shortcuts for compatibility
+block_user = add_blocked_user
+unblock_user = remove_blocked_user
