@@ -8,7 +8,8 @@ load_dotenv()
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 
 # لیست آیدی‌های عددی ادمین
-ADMIN_IDS = [int(id) for id in os.getenv("ADMIN_IDS", "").split(",") if id]
+from config import ADMIN_IDS
+admin_ids = ADMIN_IDS
 
 # مسیر فایل‌های داده
 USERS_FILE = "data/users.json"
