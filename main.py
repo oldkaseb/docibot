@@ -15,6 +15,7 @@ def main():
     dp.add_handler(button_callback_handler)
     dp.add_handler(forall_init_handler)
     dp.add_handler(MessageHandler(Filters.private & ~Filters.command, handle_broadcast_message))
+    
     for handler in admin_handlers:
         dp.add_handler(handler)
 
