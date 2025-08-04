@@ -1,102 +1,120 @@
-from telegram import Update
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import CallbackContext
-import json
-import os
 from config import ADMIN_IDS
+from utils.db import (
+    get_all_users,
+    get_blocked_users,
+    add_admin_id,
+    remove_admin_id,
+    is_admin,
+    block_user,
+    unblock_user,
+    is_blocked
+)
+from utils.helpers import broadcast
+import json
+from datetime import datetime
 
-USERS_FILE = "data/users.json"
-ADMINS_FILE = "data/admins.json"
 
-# آمار کاربران
 def stats_command(update: Update, context: CallbackContext):
-    admin_ids = list(map(int, ADMIN_IDS.split(',')))
-    if update.effective_user.id not in admin_ids:
+    if update.effective_user.id not in ADMIN_IDS:
         return
+    users = get_all_users()
+    text = f"📊 آمار کاربران:\n\n👤 تعداد کل: {len(users)}\n"
+    for uid, info in users.items():
+        name = info.get("name", "—")
+        username = info.get("username", "—")
+        time = info.get("time", "—")
+        text += f"\n🆔 {uid}\n👤 {name} | @{username}\n🕰 {time}\n"
+    update.message.reply_text(text)
 
-    if not os.path.exists(USERS_FILE):
-        update.message.reply_text("❌ هیچ کاربری ثبت نشده.")
-        return
 
-    with open(USERS_FILE, 'r') as f:
-        users = json.load(f)
-
-    count = len(users)
-    lines = [f"👥 مجموع کاربران: {count}\n\n"]
-    for i, (uid, info) in enumerate(users.items(), 1):
-        lines.append(f"{i}. {info['name']} ({info['username']})\n🆔 {uid} - ⏱ {info['start_time']}\n")
-
-    message = "\n".join(lines)
-    update.message.reply_text(message if len(message) < 4000 else message[:3900] + "\n...")
-
-# راهنما
 def help_command(update: Update, context: CallbackContext):
-    admin_ids = list(map(int, ADMIN_IDS.split(',')))
-    if update.effective_user.id not in admin_ids:
+    if update.effective_user.id not in ADMIN_IDS:
         return
+    text = "📖 راهنمای ادمین:\n\n"
+    text += "/stats - آمار کاربران\n"
+    text += "/forall - پیام همگانی (با ریپلای)\n"
+    text += "/addadmin [id] - افزودن ادمین\n"
+    text += "/removeadmin [id] - حذف ادمین\n"
+    update.message.reply_text(text)
 
-    help_text = (
-        "📘 راهنمای دستورات:\n\n"
-        "/stats - مشاهده آمار کاربران\n"
-        "/forall - ارسال پیام همگانی (ریپلای کنید)\n"
-        "/addadmin [id] - افزودن ادمین\n"
-        "/removeadmin [id] - حذف ادمین\n"
-    )
-    update.message.reply_text(help_text)
 
-# پیام همگانی (در main جدا مدیریت می‌شه، اینجا صرفاً ارجاع داریم)
 def forall_command(update: Update, context: CallbackContext):
-    from handlers.forall import forall_command as real_forall
-    return real_forall(update, context)
+    if update.effective_user.id not in ADMIN_IDS:
+        return update.message.reply_text("⛔ فقط ادمین‌ها می‌تونن پیام همگانی بفرستن.")
+    if not update.message.reply_to_message:
+        return update.message.reply_text("❗ باید روی یک پیام ریپلای کنید.")
+    success, fail = broadcast(context.bot, update.message.reply_to_message)
+    update.message.reply_text(f"✅ ارسال شد: {success}\n❌ شکست‌خورده: {fail}")
 
-# افزودن ادمین
+
 def add_admin(update: Update, context: CallbackContext):
-    if update.effective_user.id not in list(map(int, ADMIN_IDS.split(','))):
+    if update.effective_user.id not in ADMIN_IDS:
         return
+    if len(context.args) != 1:
+        return update.message.reply_text("❗ لطفاً یک آیدی عددی وارد کنید.")
+    try:
+        admin_id = int(context.args[0])
+        add_admin_id(admin_id)
+        update.message.reply_text(f"✅ ادمین {admin_id} اضافه شد.")
+    except:
+        update.message.reply_text("⛔ آیدی وارد شده معتبر نیست.")
 
-    if not context.args:
-        update.message.reply_text("❗ لطفاً آیدی عددی ادمین جدید رو وارد کن.")
-        return
 
-    new_id = context.args[0]
-    os.makedirs("data", exist_ok=True)
-    if os.path.exists(ADMINS_FILE):
-        with open(ADMINS_FILE, 'r') as f:
-            admins = json.load(f)
-    else:
-        admins = []
-
-    if new_id in admins:
-        update.message.reply_text("⚠️ این کاربر از قبل ادمین هست.")
-        return
-
-    admins.append(new_id)
-    with open(ADMINS_FILE, 'w') as f:
-        json.dump(admins, f)
-
-    update.message.reply_text(f"✅ ادمین جدید با آیدی {new_id} افزوده شد.")
-
-# حذف ادمین
 def remove_admin(update: Update, context: CallbackContext):
-    if update.effective_user.id not in list(map(int, ADMIN_IDS.split(','))):
+    if update.effective_user.id not in ADMIN_IDS:
+        return
+    if len(context.args) != 1:
+        return update.message.reply_text("❗ لطفاً یک آیدی عددی وارد کنید.")
+    try:
+        admin_id = int(context.args[0])
+        remove_admin_id(admin_id)
+        update.message.reply_text(f"✅ ادمین {admin_id} حذف شد.")
+    except:
+        update.message.reply_text("⛔ آیدی وارد شده معتبر نیست.")
+
+
+def handle_reply_callback(update: Update, context: CallbackContext):
+    query = update.callback_query
+    query.answer()
+    data = query.data.split(":")
+    if len(data) != 2:
+        return
+    _, user_id = data
+    context.user_data["reply_to"] = int(user_id)
+    query.message.reply_text("✉️ لطفاً پاسخ خود را ارسال کنید.")
+
+
+def handle_admin_reply(update: Update, context: CallbackContext):
+    if update.effective_user.id not in ADMIN_IDS:
+        return
+    reply_to = context.user_data.get("reply_to")
+    if not reply_to:
+        return
+    try:
+        context.bot.send_message(chat_id=reply_to, text=update.message.text)
+        update.message.reply_text("✅ پیام شما ارسال شد.")
+    except:
+        update.message.reply_text("❌ ارسال پیام ناموفق بود.")
+    context.user_data["reply_to"] = None
+
+
+def handle_block_unblock(update: Update, context: CallbackContext):
+    query = update.callback_query
+    query.answer()
+    data = query.data.split(":")
+    if len(data) != 2:
+        return
+    action, user_id = data
+    user_id = int(user_id)
+
+    if update.effective_user.id not in ADMIN_IDS:
         return
 
-    if not context.args:
-        update.message.reply_text("❗ لطفاً آیدی عددی ادمین رو برای حذف وارد کن.")
-        return
-
-    remove_id = context.args[0]
-    if os.path.exists(ADMINS_FILE):
-        with open(ADMINS_FILE, 'r') as f:
-            admins = json.load(f)
-    else:
-        admins = []
-
-    if remove_id not in admins:
-        update.message.reply_text("❌ این کاربر در لیست ادمین‌ها نیست.")
-        return
-
-    admins.remove(remove_id)
-    with open(ADMINS_FILE, 'w') as f:
-        json.dump(admins, f)
-
-    update.message.reply_text(f"✅ ادمین با آیدی {remove_id} حذف شد.")
+    if action == "block":
+        block_user(user_id)
+        query.edit_message_text("❌ کاربر بلاک شد.")
+    elif action == "unblock":
+        unblock_user(user_id)
+        query.edit_message_text("✅ کاربر آزاد شد.")
