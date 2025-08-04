@@ -1,13 +1,16 @@
-from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
-from telegram.ext import CallbackContext, MessageHandler, CallbackQueryHandler, Filters
-from config import ADMIN_IDS
-from utils.db import (
-    save_message, is_blocked, set_reply_state,
-    get_reply_state, clear_reply_state,
-    block_user, unblock_user
+from telegram import (
+    Update,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+)
+from telegram.ext import (
+    CallbackContext,
 )
 
-# 📩 پیام کاربر
+from utils.db import save_message, is_blocked
+from config import ADMIN_IDS
+
+
 def user_message(update: Update, context: CallbackContext):
     user = update.effective_user
     chat_id = user.id
@@ -15,77 +18,36 @@ def user_message(update: Update, context: CallbackContext):
     if is_blocked(chat_id):
         return update.message.reply_text("شما توسط ادمین بلاک شده‌اید 🚫")
 
+    # ذخیره پیام در دیتابیس (json)
     save_message(user)
 
-    for admin_id in ADMIN_IDS:
-        # دکمه‌های پاسخ و بلاک زیر پیام
-        buttons = [
-            [
-                InlineKeyboardButton("✉️ پاسخ", callback_data=f"reply_{chat_id}"),
-                InlineKeyboardButton("🔒 بلاک", callback_data=f"block_{chat_id}")
-            ]
+    # دکمه‌ها برای ادمین (پاسخ و بلاک)
+    buttons = [
+        [
+            InlineKeyboardButton("✉️ پاسخ", callback_data=f"reply_{chat_id}"),
+            InlineKeyboardButton("🔒 بلاک", callback_data=f"block_{chat_id}")
         ]
+    ]
 
-        context.bot.send_message(
-            chat_id=admin_id,
-            text=f"📨 پیام از: {user.full_name} (@{user.username})\nID: <code>{user.id}</code>",
-            parse_mode="HTML",
-            reply_markup=InlineKeyboardMarkup(buttons)
-        )
-
+    # ارسال پیام به ادمین‌ها
+    for admin_id in ADMIN_IDS:
         try:
+            # مشخصات کاربر
+            context.bot.send_message(
+                chat_id=admin_id,
+                text=f"📨 پیام از: {user.full_name} (@{user.username})\nID: <code>{chat_id}</code>",
+                parse_mode="HTML",
+                reply_markup=InlineKeyboardMarkup(buttons)
+            )
+            # کپی پیام اصلی کاربر
             update.message.copy(chat_id=admin_id)
         except Exception as e:
-            context.bot.send_message(admin_id, text=f"⚠️ خطا در ارسال پیام کاربر:\n{e}")
+            context.bot.send_message(admin_id, text=f"⚠️ خطا در ارسال پیام:\n{e}")
 
-    # تأیید به کاربر
+    # اطلاع‌رسانی به کاربر
     update.message.reply_text(
         "✅ پیام شما ارسال شد و دکتر گشاد اون رو دید 😎",
         reply_markup=InlineKeyboardMarkup([
             [InlineKeyboardButton("✉️ ارسال پیام دیگر", callback_data="send_msg")]
         ])
     )
-
-# 🧠 مدیریت دکمه‌های پاسخ/بلاک/آنبلاک
-def button_handler(update: Update, context: CallbackContext):
-    query = update.callback_query
-    query.answer()
-    data = query.data
-    admin_id = query.from_user.id
-
-    if data.startswith("reply_"):
-        user_id = int(data.split("_")[1])
-        set_reply_state(admin_id, user_id)
-        query.edit_message_reply_markup(reply_markup=None)
-        context.bot.send_message(chat_id=admin_id, text="✉️ پیام خود را بنویس تا برای کاربر ارسال شود.")
-
-    elif data.startswith("block_"):
-        user_id = int(data.split("_")[1])
-        block_user(user_id)
-        query.edit_message_reply_markup(
-            InlineKeyboardMarkup([[InlineKeyboardButton("🔓 آنبلاک", callback_data=f"unblock_{user_id}")]])
-        )
-        context.bot.send_message(admin_id, text="✅ کاربر بلاک شد.")
-
-    elif data.startswith("unblock_"):
-        user_id = int(data.split("_")[1])
-        unblock_user(user_id)
-        query.edit_message_reply_markup(
-            InlineKeyboardMarkup([[InlineKeyboardButton("🔒 بلاک", callback_data=f"block_{user_id}")]])
-        )
-        context.bot.send_message(admin_id, text="✅ کاربر آنبلاک شد.")
-
-# 💬 پاسخ ادمین به کاربر
-def handle_admin_reply(update: Update, context: CallbackContext):
-    admin_id = update.effective_user.id
-    state = get_reply_state(admin_id)
-
-    if state:
-        context.bot.copy_message(chat_id=state, from_chat_id=admin_id, message_id=update.message.message_id)
-        clear_reply_state(admin_id)
-        update.message.reply_text("✅ پیام برای کاربر ارسال شد.")
-
-# ⬇️ هندلرها برای main.py
-user_message_handler = MessageHandler(Filters.private & Filters.all & ~Filters.command, user_message)
-reply_message_handler = MessageHandler(Filters.private & Filters.all & ~Filters.command, handle_admin_reply)
-button_callback_handler = CallbackQueryHandler(button_handler)
