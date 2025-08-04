@@ -24,6 +24,7 @@ dp = updater.dispatcher
 
 # دستورات کاربری
 dp.add_handler(CommandHandler("start", start_command))
+dp.add_handler(CommandHandler("forall", forall_command))
 dp.add_handler(CallbackQueryHandler(button_callback, pattern="^start_message$"))
 dp.add_handler(MessageHandler(Filters.text & ~Filters.command, user_message))
 
