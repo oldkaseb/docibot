@@ -10,29 +10,24 @@ from handlers.admin import (
     forall,
     handle_broadcast_message,
     stats,
-    help_command
-)
-from handlers.message import (
-    user_message,
-    start_command,
+    help_command,
     button_callback
 )
+from handlers.message import user_message, start_command
 
-# Load env variables
 TOKEN = os.getenv("BOT_TOKEN")
 ADMIN_IDS = list(map(int, os.getenv("ADMIN_IDS", "").split(',')))
-
-# Paths
 USERS_FILE = 'data/users.json'
 BLOCK_FILE = 'data/blocked.json'
-REPLY_STATE_FILE = 'data/reply_state.json'
 
-# Ensure data folder & files exist
 os.makedirs('data', exist_ok=True)
-for path in [USERS_FILE, BLOCK_FILE, REPLY_STATE_FILE]:
-    if not os.path.exists(path):
-        with open(path, 'w') as f:
-            json.dump({} if 'users' in path or 'reply_state' in path else [], f)
+if not os.path.exists(USERS_FILE):
+    with open(USERS_FILE, 'w') as f:
+        json.dump({}, f)
+
+if not os.path.exists(BLOCK_FILE):
+    with open(BLOCK_FILE, 'w') as f:
+        json.dump([], f)
 
 def main():
     updater = Updater(TOKEN, use_context=True)
