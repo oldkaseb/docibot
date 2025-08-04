@@ -7,8 +7,7 @@ from handlers.message import (
     button_callback,
     user_message,
     handle_reply_callback,
-    handle_block_unblock,
-    handle_admin_reply
+    handle_block_unblock
 )
 from handlers.admin import (
     stats_command,
