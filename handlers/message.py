@@ -1,3 +1,6 @@
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import CallbackContext, MessageHandler, CallbackQueryHandler, Filters
+
 def user_message(update: Update, context: CallbackContext):
     user = update.effective_user
     chat_id = user.id
