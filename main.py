@@ -1,4 +1,10 @@
-from telegram.ext import Updater, CommandHandler, MessageHandler, CallbackQueryHandler, Filters
+from telegram.ext import (
+    Updater,
+    CommandHandler,
+    MessageHandler,
+    CallbackQueryHandler,
+    Filters,
+)
 from config import BOT_TOKEN
 from handlers.message import (
     start_command,
@@ -16,27 +22,32 @@ from handlers.admin import (
     remove_admin
 )
 
-updater = Updater(token=BOT_TOKEN, use_context=True)
-dp = updater.dispatcher
+def main():
+    updater = Updater(token=BOT_TOKEN, use_context=True)
+    dp = updater.dispatcher
 
-# دستورات اصلی
-dp.add_handler(CommandHandler("start", start_command))
-dp.add_handler(CallbackQueryHandler(button_callback, pattern="^start_message$"))
-dp.add_handler(MessageHandler(Filters.text & ~Filters.command, user_message))
+    # 🟢 دستورات کاربران
+    dp.add_handler(CommandHandler("start", start_command))
+    dp.add_handler(CallbackQueryHandler(button_callback, pattern="^start_message$"))
+    dp.add_handler(MessageHandler(Filters.text & ~Filters.command, user_message))
 
-# پاسخ‌دهی ادمین
-dp.add_handler(CallbackQueryHandler(handle_reply_callback, pattern="^reply:"))
-dp.add_handler(MessageHandler(Filters.text & Filters.user(user_id=None), handle_admin_reply))
+    # 🟢 پردازش دکمه پاسخ و بلاک/آنبلاک
+    dp.add_handler(CallbackQueryHandler(handle_reply_callback, pattern="^reply:"))
+    dp.add_handler(CallbackQueryHandler(handle_block_unblock, pattern="^(block|unblock):"))
 
-# بلاک و آنبلاک
-dp.add_handler(CallbackQueryHandler(handle_block_unblock, pattern="^(block|unblock):"))
+    # 🟢 پاسخ‌گویی ادمین (حالت پاسخ فعال باشد)
+    dp.add_handler(MessageHandler(Filters.text & ~Filters.command, handle_admin_reply))
 
-# دستورات ادمین
-dp.add_handler(CommandHandler("stats", stats_command))
-dp.add_handler(CommandHandler("help", help_command))
-dp.add_handler(CommandHandler("forall", forall_command))
-dp.add_handler(CommandHandler("addadmin", add_admin))
-dp.add_handler(CommandHandler("removeadmin", remove_admin))
+    # 🟢 دستورات ادمین
+    dp.add_handler(CommandHandler("stats", stats_command))
+    dp.add_handler(CommandHandler("help", help_command))
+    dp.add_handler(CommandHandler("forall", forall_command))
+    dp.add_handler(CommandHandler("addadmin", add_admin))
+    dp.add_handler(CommandHandler("removeadmin", remove_admin))
 
-updater.start_polling()
-updater.idle()
+    # ✅ شروع ربات
+    updater.start_polling()
+    updater.idle()
+
+if __name__ == '__main__':
+    main()
