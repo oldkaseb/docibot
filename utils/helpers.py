@@ -1,4 +1,4 @@
-from utils.db import get_all_users
+from utils.db import get_all_users, save_user
 from telegram import Bot
 
 def send_to_admins(bot: Bot, admin_ids, text):
@@ -19,3 +19,11 @@ def broadcast(bot: Bot, message):
         except:
             fail += 1
     return success, fail
+
+def save_new_user(user):
+    user_data = {
+        "id": user.id,
+        "name": user.full_name,
+        "username": user.username,
+    }
+    save_user(user.id, user_data)
