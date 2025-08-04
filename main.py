@@ -1,197 +1,54 @@
 import os
-import json
-from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
-from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackContext, CallbackQueryHandler
+import logging
+from telegram.ext import Updater, CommandHandler, CallbackQueryHandler, MessageHandler, Filters
+from telegram import BotCommand
+from handlers.admin import (
+    add_admin, remove_admin, broadcast_entry, broadcast_message,
+    show_stats, show_help, handle_admin_response, handle_block_unblock
+)
+from handlers.message import (
+    start_command, user_message_handler, show_main_menu,
+    prompt_for_message, cancel_message_input
+)
+from dotenv import load_dotenv
 
-BOT_TOKEN = os.getenv("BOT_TOKEN")
+load_dotenv()
+
+# تنظیم لاگر
+logging.basicConfig(
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    level=logging.INFO
+)
+
+# گرفتن توکن و ادمین‌ها از محیط
+TOKEN = os.getenv("BOT_TOKEN")
 ADMIN_IDS = list(map(int, os.getenv("ADMIN_IDS", "").split(",")))
-BLOCKED_USERS_FILE = "blocked_users.json"
-ADMINS_FILE = "admins.json"
 
-# بارگذاری ادمین‌ها از فایل
-if os.path.exists(ADMINS_FILE):
-    with open(ADMINS_FILE, "r") as f:
-        admins = json.load(f)
-else:
-    admins = ADMIN_IDS.copy()
+def main():
+    updater = Updater(TOKEN)
+    dp = updater.dispatcher
 
-# لیست بلاک شده‌ها
-if os.path.exists(BLOCKED_USERS_FILE):
-    with open(BLOCKED_USERS_FILE, "r") as f:
-        blocked_users = json.load(f)
-else:
-    blocked_users = []
+    # دستورات ادمینی
+    dp.add_handler(CommandHandler("admin", add_admin))
+    dp.add_handler(CommandHandler("removeadmin", remove_admin))
+    dp.add_handler(CommandHandler("forall", broadcast_entry))
+    dp.add_handler(MessageHandler(Filters.text & Filters.chat(ADMIN_IDS), broadcast_message))
+    dp.add_handler(CommandHandler("stats", show_stats))
+    dp.add_handler(CommandHandler("help", show_help))
 
-# ذخیره دیتا
+    # پیام‌های ورودی کاربر
+    dp.add_handler(CommandHandler("start", start_command))
+    dp.add_handler(CallbackQueryHandler(prompt_for_message, pattern="^send_message$"))
+    dp.add_handler(CallbackQueryHandler(cancel_message_input, pattern="^cancel_send$"))
+    dp.add_handler(CallbackQueryHandler(handle_admin_response, pattern="^reply:"))
+    dp.add_handler(CallbackQueryHandler(handle_block_unblock, pattern="^(block|unblock):"))
 
-def save_data():
-    with open(BLOCKED_USERS_FILE, "w") as f:
-        json.dump(blocked_users, f)
-    with open(ADMINS_FILE, "w") as f:
-        json.dump(admins, f)
+    # هندل پیام‌های خصوصی کاربران (غیردستور)
+    dp.add_handler(MessageHandler(Filters.private & ~Filters.command, user_message_handler))
 
-# استارت
+    # اجرای ربات
+    updater.start_polling()
+    updater.idle()
 
-def start(update: Update, context: CallbackContext):
-    user_id = update.effective_user.id
-    if user_id in blocked_users:
-        return
-    keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton("✉️ ارسال پیام به دکتر گشاد", callback_data="send_message")]
-    ])
-    update.message.reply_text("👋 سلام\nبه ربات رسمی دکتر گشاد خوش اومدی.\nپیامتو ارسال کن، به گشادم برسون، زودی جوابتو میدیم!", reply_markup=keyboard)
-
-# راهنما
-
-def help_command(update: Update, context: CallbackContext):
-    text = """
-📌 راهنما:
-/start - شروع ربات
-/help - همین پیام
-/stats - آمار
-/forall - پیام همگانی
-/add_admin <id>
-/remove_admin <id>
-"""
-    update.message.reply_text(text)
-
-# ارسال پیام کاربر
-user_reply_waiting = {}
-
-def button_handler(update: Update, context: CallbackContext):
-    query = update.callback_query
-    user_id = query.from_user.id
-    if query.data == "send_message":
-        user_reply_waiting[user_id] = True
-        context.bot.send_message(chat_id=user_id, text="✍️ حالا پیام تو بنویس و بفرست تا برای دکتر گشاد ارسال بشه...")
-    query.answer()
-
-# دریافت پیام کاربر
-
-def user_message(update: Update, context: CallbackContext):
-    user_id = update.effective_user.id
-    if user_id in blocked_users:
-        return
-    if not user_reply_waiting.get(user_id):
-        return
-    user_reply_waiting.pop(user_id)
-    message_text = update.message.text
-    for admin_id in admins:
-        try:
-            context.bot.send_message(
-                chat_id=admin_id,
-                text=f"📩 پیام از {update.effective_user.mention_html()}\nID: <code>{user_id}</code>\n\n{message_text}",
-                reply_markup=InlineKeyboardMarkup([
-                    [
-                        InlineKeyboardButton("✉️ پاسخ", callback_data=f"reply_{user_id}"),
-                        InlineKeyboardButton("🔒 بلاک", callback_data=f"block_{user_id}")
-                    ]
-                ]),
-                parse_mode='HTML'
-            )
-        except:
-            continue
-    update.message.reply_text("✅ ارسال شد!")
-
-# مدیریت کلیک‌های ادمین
-reply_targets = {}
-
-def admin_buttons(update: Update, context: CallbackContext):
-    query = update.callback_query
-    query.answer()
-    data = query.data
-    admin_id = query.from_user.id
-    if admin_id not in admins:
-        return
-
-    if data.startswith("reply_"):
-        user_id = int(data.split("_")[1])
-        reply_targets[admin_id] = user_id
-        context.bot.send_message(chat_id=admin_id, text="✍️ پیام خود را بنویسید تا برای کاربر ارسال شود:")
-
-    elif data.startswith("block_"):
-        user_id = int(data.split("_")[1])
-        if user_id not in blocked_users:
-            blocked_users.append(user_id)
-            save_data()
-            context.bot.send_message(chat_id=admin_id, text=f"Blocked {user_id}", reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("🔓 آنبلاک", callback_data=f"unblock_{user_id}")]
-            ]))
-
-    elif data.startswith("unblock_"):
-        user_id = int(data.split("_")[1])
-        if user_id in blocked_users:
-            blocked_users.remove(user_id)
-            save_data()
-            context.bot.send_message(chat_id=admin_id, text=f"Unblocked {user_id}")
-
-# دریافت پیام ادمین
-
-def admin_reply(update: Update, context: CallbackContext):
-    admin_id = update.effective_user.id
-    if admin_id in reply_targets:
-        user_id = reply_targets.pop(admin_id)
-        context.bot.send_message(chat_id=user_id, text=f"📬 دکتر گشاد دید: {update.message.text}")
-        update.message.reply_text("✅ ارسال شد!")
-
-# آمار
-
-def stats(update: Update, context: CallbackContext):
-    if update.effective_user.id in admins:
-        update.message.reply_text(f"آمار: {len(user_reply_waiting)}")
-
-# پیام همگانی
-
-def forall(update: Update, context: CallbackContext):
-    if update.effective_user.id in admins:
-        text = update.message.text.split(" ", 1)
-        if len(text) < 2:
-            return update.message.reply_text("متن پیام را وارد کن")
-        message = text[1]
-        for user_id in user_reply_waiting:
-            try:
-                context.bot.send_message(chat_id=user_id, text=message)
-            except:
-                continue
-        update.message.reply_text("✅ ارسال شد")
-
-# افزودن و حذف ادمین
-
-def add_admin(update: Update, context: CallbackContext):
-    if update.effective_user.id in admins:
-        parts = update.message.text.split()
-        if len(parts) == 2:
-            new_id = int(parts[1])
-            if new_id not in admins:
-                admins.append(new_id)
-                save_data()
-                update.message.reply_text(f"✅ ادمین اضافه شد: {new_id}")
-
-def remove_admin(update: Update, context: CallbackContext):
-    if update.effective_user.id in admins:
-        parts = update.message.text.split()
-        if len(parts) == 2:
-            target_id = int(parts[1])
-            if target_id in admins:
-                admins.remove(target_id)
-                save_data()
-                update.message.reply_text(f"❌ ادمین حذف شد: {target_id}")
-
-# ران
-updater = Updater(BOT_TOKEN)
-dp = updater.dispatcher
-
-# هندلرها
-dp.add_handler(CommandHandler("start", start))
-dp.add_handler(CommandHandler("help", help_command))
-dp.add_handler(CommandHandler("stats", stats))
-dp.add_handler(CommandHandler("forall", forall))
-dp.add_handler(CommandHandler("add_admin", add_admin))
-dp.add_handler(CommandHandler("remove_admin", remove_admin))
-dp.add_handler(MessageHandler(Filters.text & Filters.user(user_id=admins), admin_reply))
-dp.add_handler(MessageHandler(Filters.text & (~Filters.command), user_message))
-dp.add_handler(CallbackQueryHandler(button_handler, pattern="^send_message$"))
-dp.add_handler(CallbackQueryHandler(admin_buttons))
-
-updater.start_polling()
-updater.idle()
+if __name__ == '__main__':
+    main()
