@@ -16,6 +16,6 @@ def handle_broadcast_message(update: Update, context: CallbackContext):
     if user_id in pending_broadcast:
         del pending_broadcast[user_id]
         sent, failed = broadcast(context.bot, update.message)
-        update.message.reply_text(f"✅ پیام همگانی ارسال شد.\n🎯 موفق: {sent} | ❌ ناموفق: {failed}")
+        update.message.reply_text(f"✅ پیام همگانی ارسال شد. موفق: {sent} | ناموفق: {failed}")
 
 forall_init_handler = CommandHandler("forall", forall_command)

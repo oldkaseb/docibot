@@ -19,29 +19,23 @@ def help_command(update: Update, context: CallbackContext):
 
 def addadmin(update: Update, context: CallbackContext):
     if update.effective_user.id != ADMIN_IDS[0]:
-        return update.message.reply_text("فقط ادمین اصلی اجازه دارد!")
+        return
     if len(context.args) != 1:
         return update.message.reply_text("استفاده صحیح: /addadmin [user_id]")
-    try:
-        new_admin = int(context.args[0])
-        admins.add(new_admin)
-        update.message.reply_text("✅ ادمین جدید افزوده شد.")
-    except:
-        update.message.reply_text("خطا در افزودن ادمین.")
+    new_admin = int(context.args[0])
+    admins.add(new_admin)
+    update.message.reply_text("✅ ادمین جدید افزوده شد.")
 
 def deladmin(update: Update, context: CallbackContext):
     if update.effective_user.id != ADMIN_IDS[0]:
-        return update.message.reply_text("فقط ادمین اصلی اجازه دارد!")
+        return
     if len(context.args) != 1:
         return update.message.reply_text("استفاده صحیح: /deladmin [user_id]")
-    try:
-        del_admin = int(context.args[0])
-        if del_admin == ADMIN_IDS[0]:
-            return update.message.reply_text("نمی‌تونی ادمین اصلی رو حذف کنی!")
-        admins.discard(del_admin)
-        update.message.reply_text("✅ ادمین حذف شد.")
-    except:
-        update.message.reply_text("خطا در حذف ادمین.")
+    del_admin = int(context.args[0])
+    if del_admin == ADMIN_IDS[0]:
+        return update.message.reply_text("نمی‌تونی ادمین اصلی رو حذف کنی!")
+    admins.discard(del_admin)
+    update.message.reply_text("✅ ادمین حذف شد.")
 
 def stats(update: Update, context: CallbackContext):
     if update.effective_user.id not in admins:
@@ -50,13 +44,8 @@ def stats(update: Update, context: CallbackContext):
     total = len(users)
     text = f"📊 <b>آمار کاربران:</b> (تعداد کل: {total})\n\n"
     for user in users.values():
-        text += (f"👤 {user['full_name']} (@{user['username']})\n"
-                 f"🆔 <code>{user['id']}</code>\n"
-                 f"🕐 ورود: {user['joined_at']}\n\n")
-    if len(text) > 4000:
-        update.message.reply_document(document=bytes(json.dumps(users, indent=2, ensure_ascii=False), "utf-8"), filename="users.json")
-    else:
-        update.message.reply_text(text, parse_mode="HTML")
+        text += f"👤 {user['full_name']} (@{user['username']})\n🆔 <code>{user['id']}</code>\n🕐 ورود: {user['joined_at']}\n\n"
+    update.message.reply_text(text, parse_mode="HTML")
 
 handlers = [
     CommandHandler("help", help_command),
