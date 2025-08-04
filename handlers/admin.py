@@ -1,134 +1,121 @@
-from telegram import Update
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardRemove
 from telegram.ext import CallbackContext
 import json
 import os
 from datetime import datetime
-from config import ADMIN_IDS
 
-ADMIN_FILE = 'data/admins.json'
-USER_FILE = 'data/users.json'
+DATA_FOLDER = 'data'
+USERS_FILE = os.path.join(DATA_FOLDER, 'users.json')
+BLOCK_FILE = os.path.join(DATA_FOLDER, 'blocked.json')
+ADMINS_FILE = os.path.join(DATA_FOLDER, 'admins.json')
 
-# ایجاد فایل اگر وجود نداشت
-os.makedirs('data', exist_ok=True)
-if not os.path.exists(ADMIN_FILE):
-    with open(ADMIN_FILE, 'w') as f:
-        json.dump(ADMIN_IDS, f)
+if not os.path.exists(ADMINS_FILE):
+    with open(ADMINS_FILE, 'w') as f:
+        json.dump([], f)
 
-def save_admins(admins):
-    with open(ADMIN_FILE, 'w') as f:
-        json.dump(admins, f)
+with open(ADMINS_FILE, 'r') as f:
+    extra_admins = json.load(f)
 
-def load_admins():
-    with open(ADMIN_FILE, 'r') as f:
-        return json.load(f)
+ADMIN_IDS = list(map(int, os.getenv("ADMIN_IDS", "").split(',')))
+ALL_ADMINS = ADMIN_IDS + extra_admins
 
-def add_admin(update: Update, context: CallbackContext):
-    user_id = update.effective_user.id
-    admins = load_admins()
-    
-    if user_id not in ADMIN_IDS:
-        update.message.reply_text("⛔ شما اجازه افزودن ادمین را ندارید.")
-        return
+def start_command(update: Update, context: CallbackContext):
+    user = update.effective_user
+    with open(USERS_FILE, 'r') as f:
+        users = json.load(f)
+    if str(user.id) not in users:
+        users[str(user.id)] = {
+            "name": user.full_name,
+            "username": user.username,
+            "joined": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        }
+        with open(USERS_FILE, 'w') as f:
+            json.dump(users, f, indent=2)
 
-    if len(context.args) != 1:
-        update.message.reply_text("❗ فرمت درست نیست. لطفا به صورت زیر بنویسید:\n/admin 123456789")
-        return
-
-    new_admin = int(context.args[0])
-    if new_admin in admins:
-        update.message.reply_text("ℹ️ این کاربر از قبل ادمین است.")
-    else:
-        admins.append(new_admin)
-        save_admins(admins)
-        update.message.reply_text(f"✅ کاربر {new_admin} با موفقیت به لیست ادمین‌ها اضافه شد.")
-
-def remove_admin(update: Update, context: CallbackContext):
-    user_id = update.effective_user.id
-    admins = load_admins()
-
-    if user_id not in ADMIN_IDS:
-        update.message.reply_text("⛔ شما اجازه حذف ادمین را ندارید.")
-        return
-
-    if len(context.args) != 1:
-        update.message.reply_text("❗ فرمت درست نیست. لطفا به صورت زیر بنویسید:\n/removeadmin 123456789")
-        return
-
-    target_admin = int(context.args[0])
-    if target_admin not in admins:
-        update.message.reply_text("❗ این کاربر در لیست ادمین‌ها نیست.")
-    else:
-        if target_admin in ADMIN_IDS:
-            update.message.reply_text("⚠️ شما نمی‌توانید ادمین‌های اصلی ثبت‌شده در متغیرها را حذف کنید.")
-            return
-        admins.remove(target_admin)
-        save_admins(admins)
-        update.message.reply_text(f"🗑️ کاربر {target_admin} از لیست ادمین‌ها حذف شد.")
-
-def help_command(update: Update, context: CallbackContext):
-    user_id = update.effective_user.id
-    if user_id not in load_admins():
-        return
-
-    help_text = (
-        "📘 راهنمای ادمین:\n\n"
-        "1. /admin <id> ➤ افزودن ادمین\n"
-        "2. /removeadmin <id> ➤ حذف ادمین\n"
-        "3. /forall ➤ ارسال پیام همگانی\n"
-        "4. /stats ➤ نمایش آمار کاربران\n"
-        "5. /help ➤ راهنمای دستورات ادمین"
+    keyboard = [[InlineKeyboardButton("✉️ ارسال پیام به پشتیبانی", callback_data='send_message')]]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    update.message.reply_text(
+        "به ربات خوش آمدید!\nبرای ارسال پیام به پشتیبانی روی دکمه زیر کلیک کنید:",
+        reply_markup=reply_markup
     )
-    update.message.reply_text(help_text)
 
-def forall(update: Update, context: CallbackContext):
+def button_callback(update: Update, context: CallbackContext):
+    query = update.callback_query
+    user_id = query.from_user.id
+    data = query.data
+    query.answer()
+
+    if data == "send_message":
+        context.user_data['awaiting_message'] = True
+        query.edit_message_text("پیام خود را بنویسید و برای ما ارسال کنید:")
+
+    elif data.startswith("reply_") and user_id in ALL_ADMINS:
+        target_user_id = int(data.split("_")[1])
+        context.user_data['reply_to'] = target_user_id
+        query.message.reply_text("لطفاً پاسخ خود را ارسال کنید:", reply_markup=ReplyKeyboardRemove())
+
+    elif data.startswith("block_") and user_id in ALL_ADMINS:
+        target_user_id = int(data.split("_")[1])
+        with open(BLOCK_FILE, 'r') as f:
+            blocked_users = json.load(f)
+        if target_user_id not in blocked_users:
+            blocked_users.append(target_user_id)
+            with open(BLOCK_FILE, 'w') as f:
+                json.dump(blocked_users, f)
+        query.message.reply_text("کاربر بلاک شد ✅")
+
+    elif data.startswith("unblock_") and user_id in ALL_ADMINS:
+        target_user_id = int(data.split("_")[1])
+        with open(BLOCK_FILE, 'r') as f:
+            blocked_users = json.load(f)
+        if target_user_id in blocked_users:
+            blocked_users.remove(target_user_id)
+            with open(BLOCK_FILE, 'w') as f:
+                json.dump(blocked_users, f)
+        query.message.reply_text("کاربر آنبلاک شد ✅")
+
+def user_message(update: Update, context: CallbackContext):
     user_id = update.effective_user.id
-    if user_id not in load_admins():
-        update.message.reply_text("⛔ شما ادمین نیستید.")
+    text = update.message.text
+
+    with open(BLOCK_FILE, 'r') as f:
+        blocked_users = json.load(f)
+    if user_id in blocked_users:
         return
 
-    context.user_data['awaiting_broadcast'] = True
-    update.message.reply_text("✉️ پیام خود را ارسال کنید تا به همه کاربران فرستاده شود.")
+    if context.user_data.get('awaiting_message'):
+        context.user_data['awaiting_message'] = False
+        update.message.reply_text("✅ پیام شما ارسال شد. منتظر پاسخ بمانید.")
+        for admin_id in ALL_ADMINS:
+            try:
+                keyboard = [
+                    [
+                        InlineKeyboardButton("✉️ پاسخ", callback_data=f"reply_{user_id}"),
+                        InlineKeyboardButton("❌ بلاک", callback_data=f"block_{user_id}"),
+                        InlineKeyboardButton("✅ آنبلاک", callback_data=f"unblock_{user_id}")
+                    ]
+                ]
+                reply_markup = InlineKeyboardMarkup(keyboard)
+                context.bot.send_message(
+                    chat_id=admin_id,
+                    text=f"📩 پیام جدید از کاربر:
+👤 {update.effective_user.full_name} (@{update.effective_user.username})
+🆔 {user_id}
 
-def handle_broadcast_message(update: Update, context: CallbackContext):
-    if not context.user_data.get('awaiting_broadcast'):
-        return
+📝 {text}",
+                    reply_markup=reply_markup
+                )
+            except:
+                pass
 
-    with open(USER_FILE, 'r') as f:
-        users = json.load(f)
-
-    sent = 0
-    for uid in users:
+    elif 'reply_to' in context.user_data:
+        target_user_id = context.user_data['reply_to']
         try:
-            context.bot.send_message(chat_id=int(uid), text=update.message.text)
-            sent += 1
+            context.bot.send_message(chat_id=target_user_id, text=f"📬 پاسخ پشتیبانی:
+{text}")
+            update.message.reply_text("✅ پاسخ شما ارسال شد.")
         except:
-            continue
-
-    update.message.reply_text(f"📤 پیام شما به {sent} کاربر ارسال شد.")
-    context.user_data['awaiting_broadcast'] = False
-
-def stats(update: Update, context: CallbackContext):
-    user_id = update.effective_user.id
-    if user_id not in load_admins():
-        update.message.reply_text("⛔ شما ادمین نیستید.")
-        return
-
-    if not os.path.exists(USER_FILE):
-        update.message.reply_text("❗ فایل کاربران یافت نشد.")
-        return
-
-    with open(USER_FILE, 'r') as f:
-        users = json.load(f)
-
-    if not users:
-        update.message.reply_text("هیچ کاربری ثبت نشده است.")
-        return
-
-    message = f"📊 آمار کاربران ({len(users)} نفر):\n\n"
-    for uid, data in users.items():
-        name = data.get("name", "—")
-        username = data.get("username", "—")
-        date = data.get("date", "—")
-        message += f"👤 {name} | @{username} | {uid}\n🕒 {date}\n\n"
-
-    update.message.reply_text(message)
+            update.message.reply_text("❌ خطا در ارسال پاسخ. ممکن است کاربر ربات را بلاک کرده باشد.")
+        context.user_data.pop('reply_to', None)
+    else:
+        update.message.reply_text("برای ارسال پیام، ابتدا روی دکمه ارسال پیام کلیک کنید.")
