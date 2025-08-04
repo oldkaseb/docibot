@@ -2,7 +2,7 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import CommandHandler, CallbackQueryHandler, CallbackContext
 from utils.db import add_user
 
-# /start handler
+# /start
 def start(update: Update, context: CallbackContext):
     user = update.effective_user
     add_user(user)
@@ -14,17 +14,20 @@ def start(update: Update, context: CallbackContext):
     )
 
     keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton("✉️ ارسال پیام به دکتر گشاد", callback_data="send_msg")]
+        [InlineKeyboardButton("✉️ ارسال پیام به گشاد", callback_data="send_msg")]
     ])
 
     update.message.reply_text(text, reply_markup=keyboard)
 
-# handler برای کلیک روی دکمه
+# دکمه ارسال پیام
 def send_button_handler(update: Update, context: CallbackContext):
     query = update.callback_query
     query.answer()
-    query.message.reply_text("✉️ حالا می‌تونی پیامتو برای دکتر گشاد بفرستی... منتظرم!")
 
-# خروجی هندلرها
+    # حذف دکمه قبلی و ارسال پیام راهنما
+    query.edit_message_reply_markup(reply_markup=None)
+    query.message.reply_text("✍️ حالا پیامتو تایپ کن و بفرست تا دکتر گشاد ببینه...")
+
+# هندلرها
 start_handler = CommandHandler("start", start)
 send_button_callback = CallbackQueryHandler(send_button_handler, pattern="^send_msg$")
