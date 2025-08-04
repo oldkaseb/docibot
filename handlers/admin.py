@@ -1,109 +1,106 @@
-from telegram import Update
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import CallbackContext
 import json
 import os
 from datetime import datetime
 
+# مسیر ذخیره کاربران
 USERS_FILE = 'data/users.json'
-BROADCAST_FILE = 'data/broadcast.json'
-ADMIN_IDS = [6041119040,7662192190]  # آیدی عددی ادمین‌ها اینجا قرار بگیره
 
-def load_users():
-    if not os.path.exists(USERS_FILE):
-        return {}
-    with open(USERS_FILE, 'r') as f:
-        return json.load(f)
+# متغیر محیطی برای آیدی ادمین‌ها (لیست)
+ADMIN_IDS = list(map(int, os.getenv("ADMIN_IDS", "").split(',')))
 
-def save_users(users):
-    with open(USERS_FILE, 'w') as f:
-        json.dump(users, f, indent=2)
-
+# بررسی ادمین بودن
 def is_admin(user_id):
     return user_id in ADMIN_IDS
 
-def admin_command(update: Update, context: CallbackContext):
+# /admin - افزودن ادمین جدید
+def add_admin(update: Update, context: CallbackContext):
     if not is_admin(update.effective_user.id):
         return
+    try:
+        new_admin_id = int(context.args[0])
+        if new_admin_id not in ADMIN_IDS:
+            ADMIN_IDS.append(new_admin_id)
+            update.message.reply_text(f"✅ آیدی {new_admin_id} به لیست ادمین‌ها اضافه شد.")
+        else:
+            update.message.reply_text("این کاربر قبلاً ادمین بوده است.")
+    except:
+        update.message.reply_text("استفاده صحیح: /admin [user_id]")
 
-    args = context.args
-    if len(args) != 1 or not args[0].isdigit():
-        update.message.reply_text("➕ برای افزودن ادمین، آیدی عددی رو وارد کن:\nمثال: /admin 123456789")
-        return
-
-    admin_id = int(args[0])
-    if admin_id in ADMIN_IDS:
-        update.message.reply_text("⚠️ این کاربر قبلاً ادمین بوده.")
-    else:
-        ADMIN_IDS.append(admin_id)
-        update.message.reply_text(f"✅ آیدی {admin_id} به لیست ادمین‌ها اضافه شد.")
-
+# /removeadmin - حذف ادمین
 def remove_admin(update: Update, context: CallbackContext):
     if not is_admin(update.effective_user.id):
         return
+    try:
+        remove_id = int(context.args[0])
+        if remove_id in ADMIN_IDS:
+            ADMIN_IDS.remove(remove_id)
+            update.message.reply_text(f"❌ آیدی {remove_id} از لیست ادمین‌ها حذف شد.")
+        else:
+            update.message.reply_text("این کاربر ادمین نیست.")
+    except:
+        update.message.reply_text("استفاده صحیح: /removeadmin [user_id]")
 
-    args = context.args
-    if len(args) != 1 or not args[0].isdigit():
-        update.message.reply_text("➖ برای حذف ادمین، آیدی عددی رو وارد کن:\nمثال: /removeadmin 123456789")
-        return
+# /forall - ارسال پیام همگانی
+waiting_for_broadcast = {}
 
-    admin_id = int(args[0])
-    if admin_id in ADMIN_IDS:
-        ADMIN_IDS.remove(admin_id)
-        update.message.reply_text(f"✅ آیدی {admin_id} از لیست ادمین‌ها حذف شد.")
-    else:
-        update.message.reply_text("❌ این آیدی داخل لیست ادمین‌ها نبود.")
-
-def start_broadcast(update: Update, context: CallbackContext):
+def forall(update: Update, context: CallbackContext):
     if not is_admin(update.effective_user.id):
         return
-
-    with open(BROADCAST_FILE, 'w') as f:
-        json.dump({"active": True}, f)
-
-    update.message.reply_text("📝 خب حالا گشاد بازی بسه\nپیام بعدی که می‌فرستی به همه کاربرها ارسال میشه.")
+    waiting_for_broadcast[update.effective_user.id] = True
+    update.message.reply_text("🗣 خب حالا گشاد بازی بسه. فور آل بزن ببینم چی میگی")
 
 def handle_broadcast_message(update: Update, context: CallbackContext):
+    user_id = update.effective_user.id
+    if not is_admin(user_id):
+        return
+    if waiting_for_broadcast.get(user_id):
+        with open(USERS_FILE, 'r') as f:
+            users = json.load(f)
+        sent = 0
+        for uid in users:
+            try:
+                context.bot.copy_message(chat_id=uid, from_chat_id=update.message.chat_id, message_id=update.message.message_id)
+                sent += 1
+            except:
+                continue
+        update.message.reply_text(f"📨 پیام به {sent} کاربر ارسال شد.")
+        waiting_for_broadcast.pop(user_id)
+
+# /stats - نمایش آمار ربات
+def stats(update: Update, context: CallbackContext):
     if not is_admin(update.effective_user.id):
         return
+    try:
+        with open(USERS_FILE, 'r') as f:
+            users = json.load(f)
+        if not users:
+            update.message.reply_text("🔢 هیچ کاربری ثبت نشده است.")
+            return
+        text = "📊 لیست کاربران ثبت‌شده:\n\n"
+        for i, (uid, info) in enumerate(users.items(), 1):
+            name = info.get('name', '-')
+            username = info.get('username', '-')
+            time = info.get('time', '-')
+            text += f"{i}. {name} | @{username} | {uid} | {time}\n"
+        text += f"\n📌 مجموع کاربران: {len(users)}"
+        update.message.reply_text(text)
+    except:
+        update.message.reply_text("❌ خطا در خواندن فایل کاربران.")
 
-    if not os.path.exists(BROADCAST_FILE):
-        return
+# /help - راهنما
+help_text = """
+🆘 راهنمای دستورات:
 
-    with open(BROADCAST_FILE, 'r') as f:
-        status = json.load(f)
-    if not status.get("active"):
-        return
+1️⃣ /admin [id] ➤ افزودن ادمین جدید
+2️⃣ /removeadmin [id] ➤ حذف ادمین
+3️⃣ /forall ➤ پیام همگانی
+4️⃣ /stats ➤ آمار کاربران
+5️⃣ ارسال پیام ➤ با دکمه ارسال پیام
+"""
 
-    with open(BROADCAST_FILE, 'w') as f:
-        json.dump({"active": False}, f)
-
-    users = load_users()
-    success = 0
-    for user_id in users:
-        try:
-            context.bot.copy_message(chat_id=int(user_id),
-                                     from_chat_id=update.effective_chat.id,
-                                     message_id=update.message.message_id)
-            success += 1
-        except:
-            continue
-    update.message.reply_text(f"📣 پیام برای {success} کاربر ارسال شد.")
-
-def show_stats(update: Update, context: CallbackContext):
+def help_command(update: Update, context: CallbackContext):
     if not is_admin(update.effective_user.id):
         return
-
-    users = load_users()
-    if not users:
-        update.message.reply_text("📊 آماری وجود ندارد.")
-        return
-
-    text = "📋 لیست کاربران:\n\n"
-    for uid, data in users.items():
-        name = data.get("name", "نامشخص")
-        username = data.get("username", "-")
-        time = data.get("time", "-")
-        text += f"👤 {name} | @{username} | {uid}\n🕒 ورود: {time}\n\n"
-
-    text += f"📈 مجموع کاربران: {len(users)}"
-    update.message.reply_text(text)
+    update.message.reply_text(help_text)
