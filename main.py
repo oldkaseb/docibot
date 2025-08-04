@@ -40,7 +40,6 @@ def start_command(update: Update, context: CallbackContext):
         reply_markup=keyboard
     )
 
-
 # واکنش به دکمه ارسال پیام
 def button_callback(update: Update, context: CallbackContext):
     query = update.callback_query
@@ -54,24 +53,20 @@ def button_callback(update: Update, context: CallbackContext):
         )
         context.user_data["waiting_for_message"] = True
 
-
 # دریافت پیام کاربر
 def user_message(update: Update, context: CallbackContext):
     user = update.effective_user
     text = update.message.text
 
-    # اگر کاربر در حالت پیام‌دهی نیست، کاری نکن
     if not context.user_data.get("waiting_for_message"):
         return
 
-    # بررسی بلاک
     if os.path.exists(BLOCK_FILE):
         with open(BLOCK_FILE, 'r') as f:
             blocked_ids = json.load(f)
         if user.id in blocked_ids:
             return
 
-    # ارسال پیام به همه ادمین‌ها
     admin_ids = list(map(int, os.getenv("ADMIN_IDS", "").split(',')))
     for admin_id in admin_ids:
         try:
