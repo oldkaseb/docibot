@@ -36,7 +36,7 @@ def main():
     dp.add_handler(CallbackQueryHandler(handle_block_unblock, pattern="^(block|unblock):"))
 
     # 🟢 پاسخ‌گویی ادمین (حالت پاسخ فعال باشد)
-    dp.add_handler(MessageHandler(Filters.text & ~Filters.command, handle_admin_reply))
+    dp.add_handler(MessageHandler(Filters.text & Filters.reply, handle_admin_reply))
 
     # 🟢 دستورات ادمین
     dp.add_handler(CommandHandler("stats", stats_command))
